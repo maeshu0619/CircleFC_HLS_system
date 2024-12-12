@@ -1,0 +1,57 @@
+import random
+import numpy as np
+
+class GazeEstimator:
+    def __init__(self, window_width, window_height, max_speed=10, learning_rate=0.1, forgetting_factor=0.95):
+        self.window_width = window_width
+        self.window_height = window_height
+        self.max_speed = max_speed
+        self.learning_rate = learning_rate
+        self.forgetting_factor = forgetting_factor
+
+        # Initialize gaze position at the frame center
+        self.prev_x = window_width // 2
+        self.prev_y = window_height // 2
+
+        # Initialize RLS parameters
+        self.P = np.eye(4) * 1000  # Covariance matrix (4x4 for [x, y, vx, vy])
+        self.w = np.random.rand(2, 4) * 0.01  # Small random weights for stability
+        self.prev_velocity = np.zeros(2)  # [vx, vy]
+
+    def update_rls(self, current_position, predicted_position):
+        phi = np.hstack([self.prev_x, self.prev_y, *self.prev_velocity])  # Feature vector, shape (4,)
+        error = current_position - predicted_position  # Error is shape (2,)
+        gain = self.P @ phi / (self.forgetting_factor + phi.T @ self.P @ phi)  # Gain vector, shape (4,)
+        self.w += np.outer(error, gain)  # Update weights, w shape is (2, 4)
+        self.P = (self.P - np.outer(gain, phi.T @ self.P)) / self.forgetting_factor
+
+    def predict_position(self):
+        phi = np.hstack([self.prev_x, self.prev_y, *self.prev_velocity])  # Feature vector, shape (4,)
+        return self.w @ phi  # Predicted position, shape (2,)
+
+    def generate_gaze_position(self, target_position=None):
+        if target_position:
+            # Adjust position towards the target
+            predicted_position = self.predict_position()
+            current_position = np.array(target_position)
+            self.update_rls(current_position, predicted_position)
+            next_position = predicted_position + self.learning_rate * (current_position - predicted_position)
+        else:
+            # Random movement
+            next_position = np.array([
+                max(0, min(self.prev_x + random.randint(-self.max_speed, self.max_speed), self.window_width - 1)),
+                max(0, min(self.prev_y + random.randint(-self.max_speed, self.max_speed), self.window_height - 1))
+            ])
+
+        # Ensure gaze stays within frame bounds
+        next_position[0] = max(0, min(next_position[0], self.window_width - 1))
+        next_position[1] = max(0, min(next_position[1], self.window_height - 1))
+
+        # Update state
+        velocity = next_position - np.array([self.prev_x, self.prev_y])
+        self.prev_velocity = velocity
+        self.prev_x, self.prev_y = next_position
+
+        # Log for debugging
+        #print(f"Predicted position: {predicted_position}, Updated position: {next_position}, Velocity: {velocity}")
+        return int(next_position[0]), int(next_position[1])
