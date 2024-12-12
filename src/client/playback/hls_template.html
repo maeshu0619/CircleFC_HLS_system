@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>HLS Video Streaming</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            text-align: center;
+            padding: 20px;
+        }
+        video {
+            width: 80%;
+            max-width: 800px;
+            margin: 20px auto;
+            display: block;
+        }
+        .info {
+            margin-top: 20px;
+            font-size: 1.2em;
+        }
+    </style>
+</head>
+<body>
+    <h1>HLS Video Streaming</h1>
+    <video id="video" controls loop></video>
+    <div class="info">
+        <p>Current Segment: <span id="current-segment">N/A</span></p>
+        <p>Current Resolution: <span id="current-resolution">N/A</span></p>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <script>
+        var video = document.getElementById('video');
+        var currentSegment = document.getElementById('current-segment');
+        var currentResolution = document.getElementById('current-resolution');
+
+        if (Hls.isSupported()) {
+            var hls = new Hls();
+            hls.loadSource("{m3u8_url}");
+            hls.attachMedia(video);
+
+            // Log the start of playback
+            hls.on(Hls.Events.MANIFEST_PARSED, function() {
+                video.play();
+                fetch('/log_event', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ type: 'start' })
+                });
+            });
+
+            // Log segment changes
+            hls.on(Hls.Events.FRAG_CHANGED, function(event, data) {
+                var segmentName = data.frag.relurl;
+                var resolution = data.frag.level;
+                currentSegment.textContent = segmentName;
+                currentResolution.textContent = resolution + 'p';
+
+                fetch('/log_event', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        type: 'segment-received', 
+                        segment: segmentName, 
+                        resolution: resolution 
+                    })
+                });
+            });
+
+            // Log resolution switches
+            hls.on(Hls.Events.LEVEL_SWITCHED, function(event, data) {
+                var resolution = hls.levels[data.level].height;
+                currentResolution.textContent = resolution + 'p';
+
+                fetch('/log_event', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        type: 'resolution-changed', 
+                        resolution: resolution 
+                    })
+                });
+            });
+        }
+    </script>
+</body>
+</html>
